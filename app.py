@@ -41,8 +41,13 @@ _T = {
         "warn_empty": "⚠️ 请输入一个有效的化合物名称（英文）。",
         "draw_title": "##### 🖊️ 在下方画板绘制 Skeletal Formula，然后点击「识别结构」",
         "draw_hint": "使用 Ketcher 编辑器：左侧工具栏选择原子（C, N, O …）和键类型，直接在画布上拖拽绘制。完成后点下方按钮。",
+        "toggle_smiles_draw": "用 SMILES 输入代替画板（手机默认开启，避免系统键盘与 Ketcher 冲突）",
+        "draw_title_smiles": "##### 输入 SMILES 结构式",
+        "draw_hint_smiles": "与桌面画板使用同一套解析。可从其他应用复制 SMILES 后粘贴。",
+        "smiles_placeholder": "例: CCO（乙醇）",
         "btn_analyze": "🧬 识别结构 → 生成 IUPAC 命名",
         "warn_empty_canvas": "画板为空，请先绘制一个分子结构再点击识别。",
+        "warn_empty_smiles": "请先输入或粘贴有效的 SMILES。",
         "analyzing": "正在解析并查找 IUPAC 命名…",
         "parse_fail": "❌ 解析失败: {e}",
         "you_entered": "您输入: **{q}**",
@@ -100,8 +105,13 @@ _T = {
         "warn_empty": "⚠️ Please enter a valid compound name.",
         "draw_title": "##### 🖊️ Draw a skeletal formula below, then click 'Identify'",
         "draw_hint": "Use the Ketcher editor: select atoms (C, N, O …) and bond types from the left toolbar, drag on the canvas to draw. Click the button below when done.",
+        "toggle_smiles_draw": "Use SMILES input instead of Ketcher canvas (on by default on phones — avoids OS keyboard fighting the editor)",
+        "draw_title_smiles": "##### Enter a SMILES string",
+        "draw_hint_smiles": "Same backend as the desktop drawing tab. Paste SMILES from another app if needed.",
+        "smiles_placeholder": "e.g. CCO (ethanol)",
         "btn_analyze": "🧬 Identify Structure → Generate IUPAC Name",
         "warn_empty_canvas": "Canvas is empty. Please draw a molecular structure first.",
+        "warn_empty_smiles": "Enter or paste a valid SMILES string first.",
         "analyzing": "Parsing and looking up IUPAC name…",
         "parse_fail": "❌ Parse failed: {e}",
         "you_entered": "You entered: **{q}**",
@@ -182,11 +192,6 @@ def _request_is_mobile() -> bool:
         return False
 
 
-def _ketcher_height_px() -> int:
-    """Taller canvas on phones — fat-finger + more drawable area; host-side only."""
-    return 780 if _request_is_mobile() else 520
-
-
 # ── Cached helpers ───────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=86_400, max_entries=320, show_spinner=False)
@@ -221,6 +226,10 @@ st.set_page_config(
     page_icon="🧪",
     layout="wide",
 )
+
+# Phones: Ketcher inside iframe triggers OS keyboard + broken gestures; default to SMILES box instead.
+if "smiles_only_draw" not in st.session_state:
+    st.session_state["smiles_only_draw"] = _request_is_mobile()
 
 # ── Custom CSS ───────────────────────────────────────────────────────────────
 
@@ -467,6 +476,8 @@ with st.sidebar:
         st.session_state["lang"] = chosen
         st.rerun()
 
+    st.checkbox(t("toggle_smiles_draw"), key="smiles_only_draw")
+
     st.divider()
     st.header(t("quick_examples"))
     st.caption(t("click_to_fill"))
@@ -668,12 +679,21 @@ with tab_search:
 # ── Tab 2: Free drawing mode ─────────────────────────────────────────────────
 
 with tab_draw:
-    st.markdown(t("draw_title"))
-    st.caption(t("draw_hint"))
-
-    drawn_smiles = st_ketcher(
-        value="", height=_ketcher_height_px(), key="ketcher_editor"
-    )
+    use_smiles = st.session_state.get("smiles_only_draw", False)
+    if use_smiles:
+        st.markdown(t("draw_title_smiles"))
+        st.caption(t("draw_hint_smiles"))
+        drawn_smiles = st.text_area(
+            "smiles_draw",
+            height=140,
+            placeholder=t("smiles_placeholder"),
+            label_visibility="collapsed",
+            key="mobile_smiles_draw",
+        )
+    else:
+        st.markdown(t("draw_title"))
+        st.caption(t("draw_hint"))
+        drawn_smiles = st_ketcher(value="", height=520, key="ketcher_editor")
 
     st.divider()
 
@@ -681,7 +701,7 @@ with tab_draw:
 
     if analyze:
         if not drawn_smiles or not drawn_smiles.strip():
-            st.warning(t("warn_empty_canvas"))
+            st.warning(t("warn_empty_smiles" if use_smiles else "warn_empty_canvas"))
         else:
             ok, msg = validate_structure(drawn_smiles)
             if not ok:
