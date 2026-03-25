@@ -152,6 +152,41 @@ def t(key: str, **kwargs) -> str:
     return text
 
 
+def _request_is_mobile() -> bool:
+    """Best-effort mobile detection via Streamlit request headers (1.37+)."""
+    try:
+        ctx = getattr(st, "context", None)
+        if ctx is None:
+            return False
+        headers = getattr(ctx, "headers", None)
+        if headers is None:
+            return False
+        ua = ""
+        if hasattr(headers, "get"):
+            ua = headers.get("User-Agent") or headers.get("user-agent") or ""
+        ua = (ua or "").lower()
+        for needle in (
+            "iphone",
+            "ipad",
+            "ipod",
+            "android",
+            "webos",
+            "blackberry",
+            "mobile",
+            "symbian",
+        ):
+            if needle in ua:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _ketcher_height_px() -> int:
+    """Taller canvas on phones — fat-finger + more drawable area; host-side only."""
+    return 780 if _request_is_mobile() else 520
+
+
 # ── Cached helpers ───────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=86_400, max_entries=320, show_spinner=False)
@@ -332,6 +367,21 @@ st.markdown(
         font-size: 0.7rem;
         color: #aaa;
         margin: 0.35rem 0 0 0;
+    }
+
+    /* streamlit-ketcher: host-side mobile fixes (cannot patch Ketcher JS inside iframe) */
+    @media (max-width: 900px) {
+        iframe[src*="streamlit_ketcher"] {
+            min-height: 58vh !important;
+            height: 58vh !important;
+            width: 100% !important;
+            max-width: 100vw !important;
+            touch-action: manipulation !important;
+            -webkit-touch-callout: none !important;
+        }
+        section[data-testid="stMain"] {
+            overscroll-behavior-y: contain;
+        }
     }
 </style>
 """,
@@ -621,7 +671,9 @@ with tab_draw:
     st.markdown(t("draw_title"))
     st.caption(t("draw_hint"))
 
-    drawn_smiles = st_ketcher(value="", height=520, key="ketcher_editor")
+    drawn_smiles = st_ketcher(
+        value="", height=_ketcher_height_px(), key="ketcher_editor"
+    )
 
     st.divider()
 
