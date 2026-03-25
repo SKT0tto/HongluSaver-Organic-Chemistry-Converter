@@ -656,15 +656,17 @@ with tab_isomer:
             t("btn_find_isomers"), type="primary", use_container_width=True
         )
 
+    def _set_iso_example(val):
+        st.session_state["isomer_formula_input"] = val
+        st.session_state["auto_iso_search"] = True
+
     st.caption(t("isomer_examples"))
     iso_examples = ["C4H10O", "C3H8O", "C2H6O", "C4H8", "C3H6O", "C4H10", "C3H6O2"]
     iso_cols = st.columns(len(iso_examples))
     for i, ef in enumerate(iso_examples):
         with iso_cols[i]:
-            if st.button(ef, key=f"iso_ex_{ef}", use_container_width=True):
-                st.session_state["isomer_formula_input"] = ef
-                st.session_state["auto_iso_search"] = True
-                st.rerun()
+            st.button(ef, key=f"iso_ex_{ef}", use_container_width=True,
+                      on_click=_set_iso_example, args=(ef,))
 
     auto_iso = st.session_state.pop("auto_iso_search", False)
 
