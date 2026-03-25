@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Launcher cache
+.deps_installed
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
