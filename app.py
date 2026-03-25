@@ -690,7 +690,7 @@ with tab_isomer:
                         break
                     iso = iso_results[idx]
                     with col:
-                        smi = iso.get("CanonicalSMILES", "")
+                        smi = iso.get("CanonicalSMILES") or iso.get("ConnectivitySMILES") or ""
                         name = iso.get("iupac_ib", smi)
                         try:
                             img = _cached_structure_png(smi, 300, 250)
