@@ -700,7 +700,7 @@ with tab_isomer:
                         st.markdown(f"**{name}**")
                         mw = iso.get("MolecularWeight")
                         if mw:
-                            st.caption(f"MW: {mw:.2f} · `{smi}`")
+                            st.caption(f"MW: {float(mw):.2f} · `{smi}`")
                         else:
                             st.caption(f"`{smi}`")
     elif search_iso:
