@@ -263,13 +263,13 @@ st.markdown(
         filter: drop-shadow(0 3px 10px rgba(124, 58, 237, 0.25));
     }
     @media (prefers-color-scheme: dark) {
-        .sidebar-logo .logo-benzene svg text {
-            stroke: #1a1a2e;
+        .sidebar-logo .logo-benzene .logo-txt-stroke {
+            stroke: #1a1a2e !important;
         }
     }
-    [data-theme="dark"] .sidebar-logo .logo-benzene svg text,
-    .stApp[data-theme="dark"] .sidebar-logo .logo-benzene svg text {
-        stroke: #1a1a2e;
+    [data-theme="dark"] .sidebar-logo .logo-benzene .logo-txt-stroke,
+    .stApp[data-theme="dark"] .sidebar-logo .logo-benzene .logo-txt-stroke {
+        stroke: #1a1a2e !important;
     }
     .sidebar-logo .logo-sub {
         font-family: 'Exo 2', sans-serif;
@@ -329,14 +329,21 @@ with st.sidebar:
             <!-- inner circle (aromatic ring) -->
             <circle cx="60" cy="60" r="33" fill="none"
                     stroke="url(#grad1)" stroke-width="2.8"/>
-            <!-- brand text -->
+            <!-- brand text: stroke layer (outline) -->
+            <text class="logo-txt-stroke" x="60" y="62"
+                  text-anchor="middle" dominant-baseline="central"
+                  transform="rotate(-18 60 60)"
+                  font-family="'Orbitron','Segoe UI',system-ui,sans-serif"
+                  font-size="13" font-weight="900" letter-spacing="0.4"
+                  fill="none" stroke="#ffffff" stroke-width="4"
+                  stroke-linejoin="round">HongluSaver</text>
+            <!-- brand text: fill layer (gradient on top) -->
             <text x="60" y="62"
                   text-anchor="middle" dominant-baseline="central"
                   transform="rotate(-18 60 60)"
                   font-family="'Orbitron','Segoe UI',system-ui,sans-serif"
                   font-size="13" font-weight="900" letter-spacing="0.4"
-                  fill="url(#grad1)"
-                  stroke="#ffffff" stroke-width="3" paint-order="stroke fill">HongluSaver</text>
+                  fill="url(#grad1)">HongluSaver</text>
         </svg>
     </div>
     <p class="logo-sub">Chemistry Formula Converter</p>
