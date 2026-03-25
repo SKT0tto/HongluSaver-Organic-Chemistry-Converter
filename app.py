@@ -4,14 +4,18 @@ Author: Henry Lin
 """
 
 from dataclasses import replace
+import json as _json
 
 import streamlit as st
+import streamlit.components.v1 as components
 from streamlit_ketcher import st_ketcher
 from chemistry_engine import (
     lookup_iupac,
     lookup_smiles,
     validate_structure,
     generate_2d_image,
+    generate_3d_mol_block,
+    search_formula_isomers,
     get_condensed_formula,
     format_molecular_formula_html,
 )
@@ -59,6 +63,18 @@ _T = {
         "hba": "氢键受体数",
         "rotatable": "可旋转键数",
         "synonyms_title": "🏷️ 其他名称 / 同义词",
+        "viewer_3d": "🧊 3D 分子模型",
+        "viewer_3d_hint": "拖拽旋转 · 滚轮缩放 · 自动旋转中",
+        "3d_fail": "无法生成 3D 模型: {e}",
+        "tab_isomer": "🧩 同分异构体",
+        "isomer_input_hint": "##### 输入分子式，查找所有结构异构体",
+        "isomer_placeholder": "例如: C4H10O, C3H8O, C2H6O …",
+        "btn_find_isomers": "🔍 查找",
+        "isomer_searching": "正在搜索 **{f}** 的同分异构体…",
+        "isomer_found": "找到 **{n}** 个结构不同的化合物",
+        "isomer_none": "⚠️ 未找到该分子式对应的化合物，请检查分子式。",
+        "isomer_invalid": "⚠️ 请输入有效的分子式（如 C4H10O）。",
+        "isomer_examples": "常见 IB 分子式",
         "footer": "HongluSaver — Chemistry formula converter · 作者 Author: Henry Lin",
     },
     "en": {
@@ -101,6 +117,18 @@ _T = {
         "hba": "H-Bond Acceptors",
         "rotatable": "Rotatable Bonds",
         "synonyms_title": "🏷️ Other Names / Synonyms",
+        "viewer_3d": "🧊 3D Model",
+        "viewer_3d_hint": "Drag to rotate · Scroll to zoom · Auto-spinning",
+        "3d_fail": "Cannot generate 3D model: {e}",
+        "tab_isomer": "🧩 Isomers",
+        "isomer_input_hint": "##### Enter a molecular formula to find structural isomers",
+        "isomer_placeholder": "e.g. C4H10O, C3H8O, C2H6O …",
+        "btn_find_isomers": "🔍 Search",
+        "isomer_searching": "Searching structural isomers of **{f}**…",
+        "isomer_found": "Found **{n}** structurally different compounds",
+        "isomer_none": "⚠️ No compounds found for this formula. Check the formula.",
+        "isomer_invalid": "⚠️ Please enter a valid molecular formula (e.g. C4H10O).",
+        "isomer_examples": "Common IB formulas",
         "footer": "HongluSaver — Chemistry formula converter · Author: Henry Lin",
     },
 }
@@ -129,6 +157,16 @@ def _cached_structure_png(canonical_smiles: str, width: int, height: int) -> byt
 @st.cache_data(ttl=86_400, max_entries=320, show_spinner=False)
 def _cached_smiles_lookup(canonical_smiles: str):
     return lookup_smiles(canonical_smiles)
+
+
+@st.cache_data(ttl=86_400, max_entries=200, show_spinner=False)
+def _cached_3d_mol_block(canonical_smiles: str) -> str:
+    return generate_3d_mol_block(canonical_smiles)
+
+
+@st.cache_data(ttl=86_400, max_entries=100, show_spinner=False)
+def _cached_isomer_search(formula: str):
+    return search_formula_isomers(formula)
 
 
 # ── Page Config ──────────────────────────────────────────────────────────────
@@ -408,6 +446,36 @@ with st.sidebar:
 # Helper: display a CompoundInfo block (shared between both tabs)
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _render_3d_viewer(smiles: str, height: int = 420):
+    """Render an interactive 3D molecule viewer using 3Dmol.js from CDN."""
+    try:
+        mol_block = _cached_3d_mol_block(smiles)
+    except Exception as e:
+        st.warning(t("3d_fail", e=str(e)))
+        return
+
+    mol_block_js = _json.dumps(mol_block)
+    viewer_id = f"v{hash(smiles) & 0xFFFFFFFF}"
+
+    html = f"""
+    <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+    <div id="{viewer_id}"
+         style="width:100%;height:{height}px;position:relative;
+                border:1px solid #e4e7f0;border-radius:12px;overflow:hidden;">
+    </div>
+    <script>
+    (function(){{
+        var v=$3Dmol.createViewer("{viewer_id}",{{backgroundColor:"white"}});
+        v.addModel({mol_block_js},"sdf");
+        v.setStyle({{}},{{stick:{{radius:0.14,colorscheme:"Jmol"}},
+                         sphere:{{scale:0.28,colorscheme:"Jmol"}}}});
+        v.zoomTo();v.render();v.spin("y",0.8);
+    }})();
+    </script>
+    """
+    components.html(html, height=height + 10)
+
+
 def _render_compound_result(info, *, show_query_caption: bool = True):
     st.markdown(f"## 📄 {info.iupac_name}")
     if show_query_caption and info.original_query and info.original_query.lower() != info.iupac_name.lower():
@@ -424,12 +492,16 @@ def _render_compound_result(info, *, show_query_caption: bool = True):
     col_img, col_data = st.columns([1, 1], gap="large")
 
     with col_img:
-        st.subheader(t("struct_2d"))
-        try:
-            img_bytes = _cached_structure_png(info.canonical_smiles, 550, 450)
-            st.image(img_bytes, use_container_width=True)
-        except Exception as e:
-            st.warning(t("struct_fail", e=e))
+        tab_2d, tab_3d = st.tabs([t("struct_2d"), t("viewer_3d")])
+        with tab_2d:
+            try:
+                img_bytes = _cached_structure_png(info.canonical_smiles, 550, 450)
+                st.image(img_bytes, use_container_width=True)
+            except Exception as e:
+                st.warning(t("struct_fail", e=e))
+        with tab_3d:
+            st.caption(t("viewer_3d_hint"))
+            _render_3d_viewer(info.canonical_smiles)
 
     with col_data:
         st.subheader(t("chem_repr"))
@@ -501,7 +573,7 @@ def _render_compound_result(info, *, show_query_caption: bool = True):
 # Two-tab layout
 # ══════════════════════════════════════════════════════════════════════════════
 
-tab_search, tab_draw = st.tabs([t("tab_search"), t("tab_draw")])
+tab_search, tab_draw, tab_isomer = st.tabs([t("tab_search"), t("tab_draw"), t("tab_isomer")])
 
 # ── Tab 1: Search by name ────────────────────────────────────────────────────
 
@@ -565,6 +637,72 @@ with tab_draw:
                         st.error(t("parse_fail", e=e))
                         st.stop()
                 _render_compound_result(info, show_query_caption=False)
+
+
+# ── Tab 3: Isomer generator ───────────────────────────────────────────────
+
+with tab_isomer:
+    st.markdown(t("isomer_input_hint"))
+    col_f, col_b = st.columns([5, 1])
+    with col_f:
+        formula_input = st.text_input(
+            "formula",
+            placeholder=t("isomer_placeholder"),
+            label_visibility="collapsed",
+            key="isomer_formula_input",
+        )
+    with col_b:
+        search_iso = st.button(
+            t("btn_find_isomers"), type="primary", use_container_width=True
+        )
+
+    st.caption(t("isomer_examples"))
+    iso_examples = ["C4H10O", "C3H8O", "C2H6O", "C4H8", "C3H6O", "C4H10", "C3H6O2"]
+    iso_cols = st.columns(len(iso_examples))
+    for i, ef in enumerate(iso_examples):
+        with iso_cols[i]:
+            if st.button(ef, key=f"iso_ex_{ef}", use_container_width=True):
+                st.session_state["isomer_formula_input"] = ef
+                st.session_state["auto_iso_search"] = True
+                st.rerun()
+
+    auto_iso = st.session_state.pop("auto_iso_search", False)
+
+    if (search_iso or auto_iso) and formula_input.strip():
+        with st.spinner(t("isomer_searching", f=formula_input.strip())):
+            try:
+                iso_results = _cached_isomer_search(formula_input.strip())
+            except Exception as e:
+                st.error(f"❌ {e}")
+                st.stop()
+
+        if not iso_results:
+            st.warning(t("isomer_none"))
+        else:
+            st.success(t("isomer_found", n=len(iso_results)))
+            for row_start in range(0, len(iso_results), 3):
+                grid = st.columns(3)
+                for j, col in enumerate(grid):
+                    idx = row_start + j
+                    if idx >= len(iso_results):
+                        break
+                    iso = iso_results[idx]
+                    with col:
+                        smi = iso.get("CanonicalSMILES", "")
+                        name = iso.get("iupac_ib", smi)
+                        try:
+                            img = _cached_structure_png(smi, 300, 250)
+                            st.image(img, use_container_width=True)
+                        except Exception:
+                            st.info("(structure unavailable)")
+                        st.markdown(f"**{name}**")
+                        mw = iso.get("MolecularWeight")
+                        if mw:
+                            st.caption(f"MW: {mw:.2f} · `{smi}`")
+                        else:
+                            st.caption(f"`{smi}`")
+    elif search_iso:
+        st.warning(t("isomer_invalid"))
 
 
 # ── Footer ───────────────────────────────────────────────────────────────────

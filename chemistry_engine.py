@@ -7,6 +7,7 @@ forms when identifiable, ranked from PubChem/Cactus synonyms (no per-name web pa
 import io
 import json
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -717,6 +718,103 @@ def format_molecular_formula_html(formula: str) -> str:
         else:
             html += ch
     return html
+
+
+def generate_3d_mol_block(smiles: str) -> str:
+    """Generate 3D-optimised mol block for interactive viewing."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise ValueError(f"Invalid SMILES: {smiles}")
+    mol = Chem.AddHs(mol)
+    params = AllChem.ETKDGv3()
+    params.randomSeed = 42
+    res = AllChem.EmbedMolecule(mol, params)
+    if res == -1:
+        params.useRandomCoords = True
+        AllChem.EmbedMolecule(mol, params)
+    try:
+        AllChem.MMFFOptimizeMolecule(mol, maxIters=500)
+    except Exception:
+        try:
+            AllChem.UFFOptimizeMolecule(mol, maxIters=500)
+        except Exception:
+            pass
+    return Chem.MolToMolBlock(mol)
+
+
+def search_formula_isomers(formula: str, max_results: int = 25) -> list[dict]:
+    """
+    Search PubChem for structural isomers sharing *formula*.
+    Returns list of dicts with CID, CanonicalSMILES, IUPACName,
+    MolecularWeight, and iupac_ib (IB-normalised display name).
+    """
+    formula = formula.strip()
+    if not formula or not re.match(r"^[A-Z][A-Za-z0-9]*$", formula):
+        raise ValueError("请输入有效的分子式，如 C4H10O")
+
+    encoded = urllib.parse.quote(formula, safe="")
+    base = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
+    url = f"{base}/compound/formula/{encoded}/cids/JSON"
+    req = urllib.request.Request(url, headers={"User-Agent": _HTTP_UA})
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return []
+        raise ValueError(f"PubChem error: HTTP {e.code}")
+
+    retries = 0
+    while "Waiting" in data and retries < 15:
+        list_key = data["Waiting"]["ListKey"]
+        time.sleep(1.5)
+        poll_url = f"{base}/compound/listkey/{list_key}/cids/JSON"
+        req2 = urllib.request.Request(poll_url, headers={"User-Agent": _HTTP_UA})
+        try:
+            with urllib.request.urlopen(req2, timeout=30) as resp:
+                data = json.loads(resp.read().decode())
+        except urllib.error.HTTPError:
+            retries += 1
+            continue
+        retries += 1
+
+    cids = data.get("IdentifierList", {}).get("CID", [])
+    if not cids:
+        return []
+
+    batch = cids[: min(len(cids), 100)]
+    cid_str = ",".join(str(c) for c in batch)
+    prop_url = (
+        f"{base}/compound/cid/{cid_str}/property/"
+        "IUPACName,CanonicalSMILES,MolecularFormula,MolecularWeight/JSON"
+    )
+    req3 = urllib.request.Request(prop_url, headers={"User-Agent": _HTTP_UA})
+
+    try:
+        with urllib.request.urlopen(req3, timeout=30) as resp:
+            prop_data = json.loads(resp.read().decode())
+    except (urllib.error.URLError, urllib.error.HTTPError):
+        return []
+
+    props = prop_data.get("PropertyTable", {}).get("Properties", [])
+
+    seen: set[str] = set()
+    results: list[dict] = []
+    for p in props:
+        smi = p.get("CanonicalSMILES", "")
+        if not smi or smi in seen:
+            continue
+        seen.add(smi)
+        canon = _canonical_smiles(smi) or smi
+        lexichem = p.get("IUPACName", "")
+        ib_name = _preferred_display_name(canon, lexichem, "")
+        p["iupac_ib"] = ib_name or lexichem or smi
+        results.append(p)
+        if len(results) >= max_results:
+            break
+
+    return results
 
 
 def get_condensed_formula(smiles: str) -> str:
